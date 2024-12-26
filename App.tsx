@@ -14,12 +14,13 @@ import {
   View,
 } from 'react-native';
 import Sound from 'react-native-sound';
+import {SpeedTimeChart} from './Chart';
 
 const SPEED_LIMITS = [20, 40, 50, 60, 70, 80, 90, 100, 120];
 const {width, height} = Dimensions.get('window');
 const TILE_SIZE = (width - 60) / 3; // 3 tiles per row with 20px padding on sides
 const CALIBRATION = 1; // + 1km/h for last result, not be proven yet but I tested it, feel real tbh
-const INITIAL_SPEED = SPEED_LIMITS[3]; //60
+const INITIAL_SPEED = SPEED_LIMITS[1]; //40
 
 // Define interfaces for our component's state and props
 interface SpeedData {
@@ -66,21 +67,49 @@ const convertToKmh = (speedInMs: number): number => {
   return Math.max(0, speedInMs * 3.6);
 };
 
+const initialSpeedData = (timestamp: number) =>
+  ({
+    currentSpeed: 0,
+    accuracy: 0,
+    timestamp,
+  } as SpeedData);
+
+const watchdogSpeedData = ({
+  speedData,
+  setSpeedData,
+}: {
+  speedData: SpeedData;
+  setSpeedData: any;
+}) => {
+  useEffect(() => {
+    const loop = setInterval(() => {
+      const now = new Date();
+      if (now.getTime() - speedData.timestamp > 5000) {
+        setSpeedData(initialSpeedData(now.getTime()));
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(loop);
+    };
+  }, [speedData]);
+};
+
 export default function App() {
   const [debug, setDebug] = useState('');
   const [showDebug, setShowDebug] = useState(__DEV__);
+  const [showChart, setShowChart] = useState(true);
   const [speedLimit, setSpeedLimit] = useState(INITIAL_SPEED);
   const speedLimitRef = useRef(INITIAL_SPEED);
   const [permissionsGranted, setPermissionsGranted] = useState<boolean>(false);
   const soundRef = useRef<Sound | null>(null);
   const watchId = useRef<number | null>(null);
   const lastSpeedWarning = useRef(0);
+  const [speedData, setSpeedData] = useState(
+    initialSpeedData(new Date().getTime()),
+  );
 
-  const [speedData, setSpeedData] = useState<SpeedData>({
-    currentSpeed: 0,
-    accuracy: 0,
-    timestamp: Date.now(),
-  });
+  watchdogSpeedData({speedData, setSpeedData});
 
   // Initialize location tracking with maximum precision
   const startLocationTracking = async (): Promise<void> => {
@@ -131,6 +160,7 @@ export default function App() {
                   return Linking.openSettings();
                 },
               },
+              {text: 'OK', onPress: () => {}},
             ],
           );
         },
@@ -152,6 +182,7 @@ export default function App() {
               return Linking.openSettings();
             },
           },
+          {text: 'OK', onPress: () => {}},
         ],
       );
     }
@@ -243,7 +274,7 @@ export default function App() {
   const getSpeedColor = () => {
     if (speedData.currentSpeed > speedLimit + 4) return '#e74c3c'; // Red for over limit, in Vietnam you sucks when exceed limit+5km/h
     if (speedData.currentSpeed > speedLimit) return '#e7a23c'; // Orange for pass limit
-    if (speedData.currentSpeed > speedLimit - 10) return '#f1c40f'; // Yellow for approaching limit
+    if (speedData.currentSpeed > speedLimit - 4) return '#f1c40f'; // Yellow for approaching limit
     return '#2ecc71'; // Green for safe speed
   };
 
@@ -270,13 +301,14 @@ export default function App() {
           {debug}
         </Text>
       )}
-      {!showDebug && (
+      {(!showDebug || showChart) && (
         <Text>
           <Text style={{position: 'absolute', fontSize: 10, top: 0}}>
             Last updated: {new Date(speedData.timestamp).toLocaleTimeString()}
           </Text>
         </Text>
       )}
+      {showChart && <SpeedTimeChart speed={speedData.currentSpeed} />}
       <View style={styles.speedContainer}>
         {speedData.currentSpeed > speedLimit && (
           <Image
@@ -358,9 +390,31 @@ export default function App() {
               {width: (width - 60) / 2, height: 60, marginTop: 12},
             ]}
             onPress={() => {
+              setShowChart(false);
               setShowDebug(_ => !_);
             }}>
             <Text style={[styles.tileText]}>{'Toggle Debug'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tile,
+              {width: (width - 60) / 2, height: 60, marginTop: 12},
+            ]}
+            onPress={() => {
+              setShowDebug(false);
+              setShowChart(true);
+            }}>
+            <Text style={[styles.tileText]}>{'On Chart'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tile,
+              {width: (width - 60) / 2, height: 60, marginTop: 12},
+            ]}
+            onPress={() => {
+              setShowChart(false);
+            }}>
+            <Text style={[styles.tileText]}>{'Off Chart'}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
